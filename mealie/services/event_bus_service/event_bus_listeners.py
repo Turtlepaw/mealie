@@ -18,6 +18,7 @@ from mealie.schema.household.webhook import ReadWebhook
 
 from .event_types import Event, EventDocumentType, EventTypes, EventWebhookData
 from .publisher import ApprisePublisher, PublisherLike, WebhookPublisher
+from .websocket_publisher import connection_manager
 
 
 class EventListenerBase(ABC):
@@ -177,3 +178,46 @@ class WebhookEventListener(EventListenerBase):
                 GroupWebhooksModel.household_id == self.household_id,
             )
             return session.execute(stmt).scalars().all()
+
+
+class WebSocketEventListener(EventListenerBase):
+    """Listener for broadcasting events to WebSocket clients"""
+
+    def __init__(self, group_id: UUID4, household_id: UUID4) -> None:
+        from .websocket_publisher import DummyPublisher
+
+        super().__init__(group_id, household_id, DummyPublisher())
+
+    def get_subscribers(self, event: Event) -> list:
+        """WebSocket doesn't use traditional subscribers - returns empty list as we handle broadcasting differently"""
+        # Only process shopping list related events
+        if event.event_type in [
+            EventTypes.shopping_list_created,
+            EventTypes.shopping_list_updated,
+            EventTypes.shopping_list_deleted,
+        ]:
+            return [True]  # Return non-empty list to trigger publish_to_subscribers
+        return []
+
+    def publish_to_subscribers(self, event: Event, subscribers: list) -> None:
+        """Broadcast event to all connected WebSocket clients in the household"""
+        import asyncio
+
+        from fastapi.encoders import jsonable_encoder
+
+        message = {
+            "event_type": event.event_type.name,
+            "document_type": event.document_data.document_type.value if event.document_data else None,
+            "document_data": jsonable_encoder(event.document_data) if event.document_data else None,
+            "timestamp": event.timestamp.isoformat() if event.timestamp else None,
+            "message": event.message.body if event.message else None,
+        }
+
+        # Create a task to send the message
+        # We use create_task to avoid blocking the event bus
+        try:
+            asyncio.create_task(connection_manager.send_to_household(message, self.group_id, self.household_id))
+        except RuntimeError:
+            # If there's no event loop, we're probably in a test or non-async context
+            # In this case, we can skip WebSocket broadcasting
+            pass
