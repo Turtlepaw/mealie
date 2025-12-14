@@ -10,6 +10,7 @@ from . import (
     controller_mealplan_rules,
     controller_shopping_lists,
     controller_webhooks,
+    controller_websocket,
 )
 
 router = APIRouter()
@@ -22,6 +23,7 @@ router.include_router(controller_invitations.router)
 router.include_router(controller_shopping_lists.router)
 router.include_router(controller_shopping_lists.item_router)
 router.include_router(controller_webhooks.router)
+router.include_router(controller_websocket.router)
 
 # mealplan_rules must be added before mealplan due to the way the routes are defined
 router.include_router(controller_mealplan_rules.router)

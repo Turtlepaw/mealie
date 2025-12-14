@@ -47,7 +47,7 @@ export function useShoppingListPage(listId: string) {
 
   // Initialize data management
   const dataManager = useShoppingListData(listId, shoppingList, loadingCounter);
-  const { isOffline, refresh: baseRefresh, startPolling, stopPolling, shoppingListItemActions } = dataManager;
+  const { isOffline, refresh: baseRefresh, startPolling, stopPolling, shoppingListItemActions, websocket } = dataManager;
 
   const refresh = () => baseRefresh(updateListItemOrder);
 
@@ -165,6 +165,7 @@ export function useShoppingListPage(listId: string) {
   return {
     itemsByLabel,
     isOffline,
+    websocket,
 
     // Sub-composables
     ...state,

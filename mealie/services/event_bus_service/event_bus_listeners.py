@@ -18,6 +18,7 @@ from mealie.schema.household.webhook import ReadWebhook
 
 from .event_types import Event, EventDocumentType, EventTypes, EventWebhookData
 from .publisher import ApprisePublisher, PublisherLike, WebhookPublisher
+from .websocket_publisher import connection_manager
 
 
 class EventListenerBase(ABC):
@@ -177,3 +178,79 @@ class WebhookEventListener(EventListenerBase):
                 GroupWebhooksModel.household_id == self.household_id,
             )
             return session.execute(stmt).scalars().all()
+
+
+class WebSocketEventListener(EventListenerBase):
+    """
+    Event bus listener for broadcasting events to WebSocket clients.
+    
+    This listener integrates with the existing event bus to provide real-time
+    updates to connected WebSocket clients. It currently supports shopping list
+    events but can be extended to support other event types.
+    
+    The listener filters events by type and broadcasts them to all WebSocket
+    connections in the affected household. Broadcasting is done asynchronously
+    to avoid blocking the event bus.
+    """
+
+    def __init__(self, group_id: UUID4, household_id: UUID4) -> None:
+        from .websocket_publisher import DummyPublisher
+
+        super().__init__(group_id, household_id, DummyPublisher())
+
+    def get_subscribers(self, event: Event) -> list:
+        """
+        Determine if this event should be broadcast via WebSocket.
+        
+        Currently supports:
+        - shopping_list_created
+        - shopping_list_updated
+        - shopping_list_deleted
+        
+        Args:
+            event: The event to check
+            
+        Returns:
+            List with one element if event should be broadcast, empty list otherwise
+        """
+        # Only process shopping list related events
+        if event.event_type in [
+            EventTypes.shopping_list_created,
+            EventTypes.shopping_list_updated,
+            EventTypes.shopping_list_deleted,
+        ]:
+            return [True]  # Return non-empty list to trigger publish_to_subscribers
+        return []
+
+    def publish_to_subscribers(self, event: Event, subscribers: list) -> None:
+        """
+        Broadcast event to all connected WebSocket clients in the household.
+        
+        The event is serialized to JSON and sent asynchronously to avoid blocking
+        the event bus. If there's no event loop (e.g., in tests), broadcasting
+        is skipped gracefully.
+        
+        Args:
+            event: The event to broadcast
+            subscribers: List of subscribers (unused for WebSocket)
+        """
+        import asyncio
+
+        from fastapi.encoders import jsonable_encoder
+
+        message = {
+            "event_type": event.event_type.name,
+            "document_type": event.document_data.document_type.value if event.document_data else None,
+            "document_data": jsonable_encoder(event.document_data) if event.document_data else None,
+            "timestamp": event.timestamp.isoformat() if event.timestamp else None,
+            "message": event.message.body if event.message else None,
+        }
+
+        # Create a task to send the message
+        # We use create_task to avoid blocking the event bus
+        try:
+            asyncio.create_task(connection_manager.send_to_household(message, self.group_id, self.household_id))
+        except RuntimeError:
+            # If there's no event loop, we're probably in a test or non-async context
+            # In this case, we can skip WebSocket broadcasting
+            pass
