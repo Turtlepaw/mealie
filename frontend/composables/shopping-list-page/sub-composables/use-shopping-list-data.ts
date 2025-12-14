@@ -1,6 +1,7 @@
 import { useOnline, useIdle } from "@vueuse/core";
 import type { ShoppingListOut } from "~/lib/api/types/household";
 import { useShoppingListItemActions } from "~/composables/use-shopping-list-item-actions";
+import { useShoppingListWebSocket } from "~/composables/use-shopping-list-websocket";
 
 /**
  * Composable for managing shopping list data fetching and polling
@@ -61,6 +62,11 @@ export function useShoppingListData(listId: string, shoppingList: Ref<ShoppingLi
       return;
     }
 
+    // Skip polling if WebSocket is connected (we'll get real-time updates instead)
+    if (websocket.isConnected.value) {
+      return;
+    }
+
     try {
       await refresh(updateListItemOrder);
 
@@ -91,19 +97,49 @@ export function useShoppingListData(listId: string, shoppingList: Ref<ShoppingLi
   const maxAttempts = 17280;
   let attempts = 0;
   let pollTimer: ReturnType<typeof setInterval>;
+  let updateListItemOrderFn: (() => void) | null = null;
+
+  // Initialize WebSocket for real-time updates
+  const user = useAuthBackend();
+  const householdId = computed(() => user.user.value?.householdId || "");
+
+  const websocket = useShoppingListWebSocket(householdId.value, {
+    onShoppingListCreated: (data) => {
+      // A new list was created, but we're on a specific list page, so we don't need to do anything
+      console.log("Shopping list created:", data);
+    },
+    onShoppingListUpdated: (data) => {
+      // Shopping list or items were updated, refresh the current list
+      if (data && updateListItemOrderFn) {
+        console.log("Shopping list updated via WebSocket, refreshing...");
+        refresh(updateListItemOrderFn);
+      }
+    },
+    onShoppingListDeleted: (data) => {
+      // List was deleted, but we're on the list page, so the user will see an error when trying to interact
+      console.log("Shopping list deleted:", data);
+    },
+  });
 
   function startPolling(updateListItemOrder: () => void) {
+    updateListItemOrderFn = updateListItemOrder;
     pollForChanges(updateListItemOrder); // populate initial list
 
     pollTimer = setInterval(() => {
       pollForChanges(updateListItemOrder);
     }, pollFrequency);
+
+    // Connect to WebSocket for real-time updates
+    websocket.connect();
   }
 
   function stopPolling() {
     if (pollTimer) {
       clearInterval(pollTimer);
     }
+
+    // Disconnect WebSocket
+    websocket.disconnect();
   }
 
   return {
@@ -113,5 +149,6 @@ export function useShoppingListData(listId: string, shoppingList: Ref<ShoppingLi
     startPolling,
     stopPolling,
     shoppingListItemActions,
+    websocket,
   };
 }
