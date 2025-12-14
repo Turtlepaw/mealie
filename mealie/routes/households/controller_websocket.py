@@ -62,6 +62,10 @@ async def websocket_endpoint(
 
     # Accept the connection first
     await websocket.accept()
+    
+    # Track connection state for cleanup
+    connected_group_id = None
+    connected_household_id = None
 
     try:
         # Wait for authentication token
@@ -93,6 +97,10 @@ async def websocket_endpoint(
                     await websocket.close()
                     return
                 
+                # Track connection state for cleanup
+                connected_group_id = user.group_id
+                connected_household_id = household_id
+                
                 # Register the connection
                 await connection_manager.connect(websocket, user.group_id, household_id)
                 
@@ -122,6 +130,6 @@ async def websocket_endpoint(
         logger = get_logger()
         logger.error(f"WebSocket error: {e}")
     finally:
-        # Always clean up the connection
-        if 'user' in locals():
-            connection_manager.disconnect(websocket, user.group_id, household_id)
+        # Always clean up the connection if it was registered
+        if connected_group_id and connected_household_id:
+            connection_manager.disconnect(websocket, connected_group_id, connected_household_id)

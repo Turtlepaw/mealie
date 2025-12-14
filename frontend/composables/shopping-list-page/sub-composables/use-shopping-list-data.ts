@@ -63,7 +63,7 @@ export function useShoppingListData(listId: string, shoppingList: Ref<ShoppingLi
     }
 
     // Skip polling if WebSocket is connected (we'll get real-time updates instead)
-    if (websocket.isConnected.value) {
+    if (websocket?.isConnected?.value) {
       return;
     }
 
@@ -103,23 +103,32 @@ export function useShoppingListData(listId: string, shoppingList: Ref<ShoppingLi
   const user = useAuthBackend();
   const householdId = computed(() => user.user.value?.householdId || "");
 
-  const websocket = useShoppingListWebSocket(householdId.value, {
-    onShoppingListCreated: (data) => {
-      // A new list was created, but we're on a specific list page, so we don't need to do anything
-      console.log("Shopping list created:", data);
-    },
-    onShoppingListUpdated: (data) => {
-      // Shopping list or items were updated, refresh the current list
-      if (data && updateListItemOrderFn) {
-        console.log("Shopping list updated via WebSocket, refreshing...");
-        refresh(updateListItemOrderFn);
-      }
-    },
-    onShoppingListDeleted: (data) => {
-      // List was deleted, but we're on the list page, so the user will see an error when trying to interact
-      console.log("Shopping list deleted:", data);
-    },
-  });
+  // WebSocket instance holder
+  let websocket: ReturnType<typeof useShoppingListWebSocket> | null = null;
+
+  function initializeWebSocket() {
+    if (!householdId.value || websocket) {
+      return;
+    }
+
+    websocket = useShoppingListWebSocket(householdId.value, {
+      onShoppingListCreated: (data) => {
+        // A new list was created, but we're on a specific list page, so we don't need to do anything
+        console.log("Shopping list created:", data);
+      },
+      onShoppingListUpdated: (data) => {
+        // Shopping list or items were updated, refresh the current list
+        if (data && updateListItemOrderFn) {
+          console.log("Shopping list updated via WebSocket, refreshing...");
+          refresh(updateListItemOrderFn);
+        }
+      },
+      onShoppingListDeleted: (data) => {
+        // List was deleted, but we're on the list page, so the user will see an error when trying to interact
+        console.log("Shopping list deleted:", data);
+      },
+    });
+  }
 
   function startPolling(updateListItemOrder: () => void) {
     updateListItemOrderFn = updateListItemOrder;
@@ -129,8 +138,11 @@ export function useShoppingListData(listId: string, shoppingList: Ref<ShoppingLi
       pollForChanges(updateListItemOrder);
     }, pollFrequency);
 
-    // Connect to WebSocket for real-time updates
-    websocket.connect();
+    // Connect to WebSocket for real-time updates once householdId is available
+    initializeWebSocket();
+    if (websocket && householdId.value) {
+      websocket.connect();
+    }
   }
 
   function stopPolling() {
@@ -139,7 +151,10 @@ export function useShoppingListData(listId: string, shoppingList: Ref<ShoppingLi
     }
 
     // Disconnect WebSocket
-    websocket.disconnect();
+    if (websocket) {
+      websocket.disconnect();
+      websocket = null;
+    }
   }
 
   return {
@@ -149,6 +164,6 @@ export function useShoppingListData(listId: string, shoppingList: Ref<ShoppingLi
     startPolling,
     stopPolling,
     shoppingListItemActions,
-    websocket,
+    websocket: computed(() => websocket),
   };
 }

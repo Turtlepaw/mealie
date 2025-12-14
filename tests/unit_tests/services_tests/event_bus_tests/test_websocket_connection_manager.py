@@ -38,7 +38,8 @@ async def test_connection_manager_connect():
 
     await manager.connect(ws, group_id, household_id)
 
-    assert ws.accepted is True
+    # Note: WebSocket is NOT accepted by the manager - it should be accepted before calling connect
+    assert ws.accepted is False
     assert group_id in manager.active_connections
     assert household_id in manager.active_connections[group_id]
     assert ws in manager.active_connections[group_id][household_id]

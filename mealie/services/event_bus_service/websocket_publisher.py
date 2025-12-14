@@ -43,15 +43,15 @@ class WebSocketConnectionManager:
 
     async def connect(self, websocket: WebSocket, group_id: UUID4, household_id: UUID4) -> None:
         """
-        Accept and register a new WebSocket connection.
+        Register a WebSocket connection.
+        
+        Note: The WebSocket must already be accepted before calling this method.
         
         Args:
-            websocket: The WebSocket connection to register
+            websocket: The WebSocket connection to register (must be already accepted)
             group_id: ID of the group the connection belongs to
             household_id: ID of the household the connection belongs to
         """
-        await websocket.accept()
-
         if group_id not in self.active_connections:
             self.active_connections[group_id] = {}
 
