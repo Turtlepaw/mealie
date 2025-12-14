@@ -181,7 +181,17 @@ class WebhookEventListener(EventListenerBase):
 
 
 class WebSocketEventListener(EventListenerBase):
-    """Listener for broadcasting events to WebSocket clients"""
+    """
+    Event bus listener for broadcasting events to WebSocket clients.
+    
+    This listener integrates with the existing event bus to provide real-time
+    updates to connected WebSocket clients. It currently supports shopping list
+    events but can be extended to support other event types.
+    
+    The listener filters events by type and broadcasts them to all WebSocket
+    connections in the affected household. Broadcasting is done asynchronously
+    to avoid blocking the event bus.
+    """
 
     def __init__(self, group_id: UUID4, household_id: UUID4) -> None:
         from .websocket_publisher import DummyPublisher
@@ -189,7 +199,20 @@ class WebSocketEventListener(EventListenerBase):
         super().__init__(group_id, household_id, DummyPublisher())
 
     def get_subscribers(self, event: Event) -> list:
-        """WebSocket doesn't use traditional subscribers - returns empty list as we handle broadcasting differently"""
+        """
+        Determine if this event should be broadcast via WebSocket.
+        
+        Currently supports:
+        - shopping_list_created
+        - shopping_list_updated
+        - shopping_list_deleted
+        
+        Args:
+            event: The event to check
+            
+        Returns:
+            List with one element if event should be broadcast, empty list otherwise
+        """
         # Only process shopping list related events
         if event.event_type in [
             EventTypes.shopping_list_created,
@@ -200,7 +223,17 @@ class WebSocketEventListener(EventListenerBase):
         return []
 
     def publish_to_subscribers(self, event: Event, subscribers: list) -> None:
-        """Broadcast event to all connected WebSocket clients in the household"""
+        """
+        Broadcast event to all connected WebSocket clients in the household.
+        
+        The event is serialized to JSON and sent asynchronously to avoid blocking
+        the event bus. If there's no event loop (e.g., in tests), broadcasting
+        is skipped gracefully.
+        
+        Args:
+            event: The event to broadcast
+            subscribers: List of subscribers (unused for WebSocket)
+        """
         import asyncio
 
         from fastapi.encoders import jsonable_encoder

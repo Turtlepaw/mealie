@@ -18,8 +18,47 @@ async def websocket_endpoint(
     """
     WebSocket endpoint for real-time updates to shopping lists and other household data.
     
-    Clients should authenticate by sending their JWT token as the first message after connection.
-    The server will then send real-time updates for events in the household.
+    This endpoint provides live updates for:
+    - Shopping list creation, updates, and deletion
+    - Shopping list item changes (create, update, delete)
+    
+    Authentication Flow:
+    1. Client connects to the WebSocket
+    2. Server accepts the connection
+    3. Client sends JWT authentication token as the first message
+    4. Server validates the token and verifies household access
+    5. Server sends connection confirmation
+    6. Server begins broadcasting relevant events
+    
+    Message Format (sent from server):
+    ```json
+    {
+        "type": "connected",  // Connection confirmation
+        "household_id": "uuid"
+    }
+    ```
+    
+    Or for events:
+    ```json
+    {
+        "event_type": "shopping_list_updated",
+        "document_type": "shopping_list",
+        "document_data": {...},  // Event-specific data
+        "timestamp": "2024-01-01T00:00:00Z",
+        "message": "Optional human-readable message"
+    }
+    ```
+    
+    Ping/Pong:
+    - Client can send "ping" to keep connection alive
+    - Server responds with `{"type": "pong"}`
+    
+    Args:
+        websocket: The WebSocket connection
+        household_id: UUID of the household to receive updates for
+        
+    Raises:
+        WebSocketDisconnect: When the client disconnects
     """
     from mealie.core.security.providers.credentials_provider import CredentialsProvider
     from mealie.db.db_setup import session_context
@@ -73,7 +112,7 @@ async def websocket_endpoint(
             return
             
     except WebSocketDisconnect:
-        # Client disconnected
+        # Client disconnected normally
         pass
     except Exception as e:
         # Log any other errors

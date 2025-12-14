@@ -10,22 +10,47 @@ logger = get_logger()
 
 
 class DummyPublisher:
-    """Dummy publisher for WebSocket event listener (actual publishing happens via connection manager)"""
+    """
+    Dummy publisher for WebSocket event listener.
+    
+    Since WebSocket broadcasting happens via the connection manager rather than
+    a traditional publisher pattern, this class provides a no-op implementation
+    to satisfy the event listener interface.
+    """
 
     def publish(self, event: Any, subscribers: list) -> None:
-        """No-op publisher"""
+        """No-op publisher method"""
         pass
 
 
 class WebSocketConnectionManager:
-    """Manages WebSocket connections for real-time updates"""
+    """
+    Manages WebSocket connections for real-time updates across the application.
+    
+    This connection manager organizes connections by group and household,
+    allowing targeted broadcasting of events to specific sets of users.
+    
+    The connection structure is:
+    - Group ID -> Household ID -> List of WebSocket connections
+    
+    This allows efficient message routing:
+    - Send to all users in a household
+    - Broadcast to all households in a group
+    """
 
     def __init__(self):
         # Map of group_id -> household_id -> list of WebSocket connections
         self.active_connections: dict[UUID4, dict[UUID4, list[WebSocket]]] = {}
 
     async def connect(self, websocket: WebSocket, group_id: UUID4, household_id: UUID4) -> None:
-        """Accept and register a new WebSocket connection"""
+        """
+        Accept and register a new WebSocket connection.
+        
+        Args:
+            websocket: The WebSocket connection to register
+            group_id: ID of the group the connection belongs to
+            household_id: ID of the household the connection belongs to
+        """
         await websocket.accept()
 
         if group_id not in self.active_connections:
@@ -38,7 +63,14 @@ class WebSocketConnectionManager:
         logger.debug(f"WebSocket connected: group={group_id}, household={household_id}")
 
     def disconnect(self, websocket: WebSocket, group_id: UUID4, household_id: UUID4) -> None:
-        """Remove a WebSocket connection"""
+        """
+        Remove a WebSocket connection and clean up empty structures.
+        
+        Args:
+            websocket: The WebSocket connection to remove
+            group_id: ID of the group the connection belongs to
+            household_id: ID of the household the connection belongs to
+        """
         if (
             group_id in self.active_connections
             and household_id in self.active_connections[group_id]
@@ -56,7 +88,17 @@ class WebSocketConnectionManager:
             logger.debug(f"WebSocket disconnected: group={group_id}, household={household_id}")
 
     async def send_to_household(self, message: dict[str, Any], group_id: UUID4, household_id: UUID4) -> None:
-        """Send a message to all connections in a specific household"""
+        """
+        Send a message to all connections in a specific household.
+        
+        This method handles connection failures gracefully by removing
+        disconnected clients automatically.
+        
+        Args:
+            message: The message to send (will be JSON-encoded)
+            group_id: ID of the group
+            household_id: ID of the household to send to
+        """
         if group_id not in self.active_connections or household_id not in self.active_connections[group_id]:
             return
 
@@ -75,7 +117,13 @@ class WebSocketConnectionManager:
             self.disconnect(connection, group_id, household_id)
 
     async def broadcast_to_group(self, message: dict[str, Any], group_id: UUID4) -> None:
-        """Send a message to all connections in a group (all households)"""
+        """
+        Send a message to all connections in a group (all households).
+        
+        Args:
+            message: The message to send (will be JSON-encoded)
+            group_id: ID of the group to broadcast to
+        """
         if group_id not in self.active_connections:
             return
 
