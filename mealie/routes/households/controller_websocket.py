@@ -1,10 +1,6 @@
-from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from pydantic import UUID4
 
-from mealie.core.dependencies.dependencies import get_current_user
-from mealie.routes._base.base_controllers import BaseUserController
-from mealie.routes._base.controller import controller
-from mealie.schema.user.user import PrivateUser
 from mealie.services.event_bus_service.websocket_publisher import connection_manager
 
 router = APIRouter(prefix="/ws", tags=["WebSocket"])
@@ -70,6 +66,12 @@ async def websocket_endpoint(
     try:
         # Wait for authentication token
         token_data = await websocket.receive_text()
+        
+        # Validate the token format
+        if not token_data or not isinstance(token_data, str) or not token_data.strip():
+            await websocket.send_json({"error": "Invalid token format"})
+            await websocket.close()
+            return
         
         # Validate the token
         try:
